@@ -4,8 +4,9 @@ import { Link, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import api from "./services/api";
 
 function mensagemErro(error) {
-  if (error.response?.data?.detail) {
-    const detail = error.response.data.detail;
+  const detail = error.response?.data?.detail;
+
+  if (detail) {
     return Array.isArray(detail)
       ? detail.map((e) => e.msg).join(", ")
       : String(detail);
@@ -18,14 +19,33 @@ function mensagemErro(error) {
   return "Não foi possível conectar à API. Tente novamente.";
 }
 
+function listaApi(data, chave) {
+  return Array.isArray(data) ? data : data?.[chave] || [];
+}
+
+function valorOpcao(item) {
+  return typeof item === "string" ? item : item.nome || item.valor;
+}
+
+function formatarData(data) {
+  if (!data) return "data não informada";
+
+  const partes = String(data).slice(0, 10).split("-");
+
+  if (partes.length !== 3) return data;
+
+  const [ano, mes, dia] = partes;
+  return `${dia}/${mes}/${ano}`;
+}
+
 function Layout({ children }) {
   const [dono, setDono] = useState(null);
-  const [erroDono, setErroDono] = useState("");
+  const [erro, setErro] = useState("");
 
   useEffect(() => {
     api.get("/eu")
-      .then((res) => setDono(res.data))
-      .catch((err) => setErroDono(mensagemErro(err)));
+      .then((r) => setDono(r.data))
+      .catch((e) => setErro(mensagemErro(e)));
   }, []);
 
   const nome = dono?.nome || dono?.name || "estudante";
@@ -37,25 +57,21 @@ function Layout({ children }) {
           <span className="brand-mark">A</span>
           <span>Achados<span className="brand-light"> IFRN</span></span>
         </Link>
+
         <div className="user-pill">
           <span className="user-dot" /> Olá, {nome}
         </div>
       </header>
 
-      {erroDono && <div className="notice error top-notice">{erroDono}</div>}
+      {erro && <div className="notice error top-notice">{erro}</div>}
 
       <main>{children}</main>
-      <footer>Feito para facilitar o encontro entre objetos e seus donos.</footer>
+
+      <footer>
+        Feito para facilitar o encontro entre objetos e seus donos.
+      </footer>
     </div>
   );
-}
-
-function formatarData(data) {
-  if (!data) return "data não informada";
-
-  const [ano, mes, dia] = String(data).slice(0, 10).split("-");
-
-  return ano && mes && dia ? `${dia}/${mes}/${ano}` : data;
 }
 
 function Home() {
@@ -72,28 +88,16 @@ function Home() {
 
   useEffect(() => {
     api.get("/categorias")
-      .then((r) => {
-        setCategorias(
-          Array.isArray(r.data) ? r.data : r.data?.categorias || []
-        );
-      })
+      .then((r) => setCategorias(listaApi(r.data, "categorias")))
       .catch(() => setCategorias([]));
 
     api.get("/locais")
-      .then((r) => {
-        setLocais(
-          Array.isArray(r.data) ? r.data : r.data?.locais || []
-        );
-      })
+      .then((r) => setLocais(listaApi(r.data, "locais")))
       .catch(() => setLocais([]));
   }, []);
 
   useEffect(() => {
     let ativo = true;
-
-    setCarregando(true);
-    setErro("");
-
     const params = {};
 
     if (busca.trim()) params.busca = busca.trim();
@@ -101,13 +105,12 @@ function Home() {
     if (categoria) params.categoria = categoria;
     if (local) params.local = local;
 
+    setCarregando(true);
+    setErro("");
+
     api.get("/itens", { params })
       .then((r) => {
-        if (ativo) {
-          setItens(
-            Array.isArray(r.data) ? r.data : r.data?.itens || []
-          );
-        }
+        if (ativo) setItens(listaApi(r.data, "itens"));
       })
       .catch((e) => {
         if (ativo) setErro(mensagemErro(e));
@@ -120,6 +123,10 @@ function Home() {
       ativo = false;
     };
   }, [busca, status, categoria, local, atualizar]);
+
+  function recarregar() {
+    setAtualizar((n) => n + 1);
+  }
 
   return (
     <Layout>
@@ -143,6 +150,7 @@ function Home() {
           <a href="#lista" className="button primary">
             Explorar itens <span>↓</span>
           </a>
+
           <Link to="/novo" className="button secondary">
             <span>＋</span> Cadastrar item
           </Link>
@@ -165,7 +173,7 @@ function Home() {
 
           <button
             className="button secondary refresh"
-            onClick={() => setAtualizar((n) => n + 1)}
+            onClick={recarregar}
           >
             ↻ Atualizar
           </button>
@@ -197,10 +205,11 @@ function Home() {
             onChange={(e) => setCategoria(e.target.value)}
           >
             <option value="">Todas as categorias</option>
-            {categorias.map((c, i) => {
-              const valor = typeof c === "string" ? c : c.nome || c.valor;
-              return <option key={i} value={valor}>{valor}</option>;
-            })}
+            {categorias.map((c, i) => (
+              <option key={i} value={valorOpcao(c)}>
+                {valorOpcao(c)}
+              </option>
+            ))}
           </select>
 
           <select
@@ -209,10 +218,11 @@ function Home() {
             onChange={(e) => setLocal(e.target.value)}
           >
             <option value="">Todos os locais</option>
-            {locais.map((l, i) => {
-              const valor = typeof l === "string" ? l : l.nome || l.valor;
-              return <option key={i} value={valor}>{valor}</option>;
-            })}
+            {locais.map((l, i) => (
+              <option key={i} value={valorOpcao(l)}>
+                {valorOpcao(l)}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -227,10 +237,7 @@ function Home() {
             <div className="state-icon danger">!</div>
             <h3>Não foi possível carregar</h3>
             <p>{erro}</p>
-            <button
-              className="button primary"
-              onClick={() => setAtualizar((n) => n + 1)}
-            >
+            <button className="button primary" onClick={recarregar}>
               Tentar novamente
             </button>
           </div>
@@ -246,12 +253,19 @@ function Home() {
         ) : (
           <div className="item-grid">
             {itens.map((item) => (
-              <Link className="item-card" to={`/item/${item.id}`} key={item.id}>
+              <Link
+                className="item-card"
+                to={`/item/${item.id}`}
+                key={item.id}
+              >
                 <div className="item-card-top">
                   <span className="item-symbol">
                     {(item.nome || "?").slice(0, 1).toUpperCase()}
                   </span>
-                  <span className={`status ${item.status === "devolvido" ? "returned" : "waiting"}`}>
+
+                  <span className={`status ${
+                    item.status === "devolvido" ? "returned" : "waiting"
+                  }`}>
                     {item.status === "devolvido" ? "Devolvido" : "Aguardando"}
                   </span>
                 </div>
@@ -299,15 +313,11 @@ function FormItem({ editar = false }) {
 
   useEffect(() => {
     api.get("/categorias")
-      .then((r) => setCategorias(
-        Array.isArray(r.data) ? r.data : r.data?.categorias || []
-      ))
+      .then((r) => setCategorias(listaApi(r.data, "categorias")))
       .catch(() => {});
 
     api.get("/locais")
-      .then((r) => setLocais(
-        Array.isArray(r.data) ? r.data : r.data?.locais || []
-      ))
+      .then((r) => setLocais(listaApi(r.data, "locais")))
       .catch(() => {});
 
     if (editar) {
@@ -329,7 +339,8 @@ function FormItem({ editar = false }) {
   }, [editar, id]);
 
   function mudar(e) {
-    setForm({ ...form, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    setForm({ ...form, [name]: value });
   }
 
   async function salvar(e) {
@@ -346,7 +357,9 @@ function FormItem({ editar = false }) {
       }
 
       setSucesso(
-        editar ? "Item atualizado com sucesso!" : "Item cadastrado com sucesso!"
+        editar
+          ? "Item atualizado com sucesso!"
+          : "Item cadastrado com sucesso!"
       );
 
       setTimeout(() => navigate(editar ? `/item/${id}` : "/"), 700);
@@ -417,13 +430,18 @@ function FormItem({ editar = false }) {
                 onChange={mudar}
               >
                 <option value="">Selecione uma categoria</option>
-                {categorias.map((c, i) => {
-                  const valor = typeof c === "string" ? c : c.nome || c.valor;
-                  return <option key={i} value={valor}>{valor}</option>;
-                })}
+
+                {categorias.map((c, i) => (
+                  <option key={i} value={valorOpcao(c)}>
+                    {valorOpcao(c)}
+                  </option>
+                ))}
+
                 {form.categoria && !categorias.some(
-                  (c) => (typeof c === "string" ? c : c.nome || c.valor) === form.categoria
-                ) && <option value={form.categoria}>{form.categoria}</option>}
+                  (c) => valorOpcao(c) === form.categoria
+                ) && (
+                  <option value={form.categoria}>{form.categoria}</option>
+                )}
               </select>
             </label>
 
@@ -436,13 +454,18 @@ function FormItem({ editar = false }) {
                 onChange={mudar}
               >
                 <option value="">Selecione um local</option>
-                {locais.map((l, i) => {
-                  const valor = typeof l === "string" ? l : l.nome || l.valor;
-                  return <option key={i} value={valor}>{valor}</option>;
-                })}
+
+                {locais.map((l, i) => (
+                  <option key={i} value={valorOpcao(l)}>
+                    {valorOpcao(l)}
+                  </option>
+                ))}
+
                 {form.local && !locais.some(
-                  (l) => (typeof l === "string" ? l : l.nome || l.valor) === form.local
-                ) && <option value={form.local}>{form.local}</option>}
+                  (l) => valorOpcao(l) === form.local
+                ) && (
+                  <option value={form.local}>{form.local}</option>
+                )}
               </select>
             </label>
           </div>
@@ -462,9 +485,13 @@ function FormItem({ editar = false }) {
           {sucesso && <div className="notice success">{sucesso}</div>}
 
           <div className="form-actions">
-            <Link className="button secondary" to={editar ? `/item/${id}` : "/"}>
+            <Link
+              className="button secondary"
+              to={editar ? `/item/${id}` : "/"}
+            >
               Cancelar
             </Link>
+
             <button className="button primary" disabled={salvando}>
               {salvando ? "Salvando..." : "Salvar item →"}
             </button>
@@ -505,9 +532,11 @@ function Detalhe() {
   }, [id]);
 
   async function excluir() {
-    if (!window.confirm("Tem certeza que deseja excluir este item? Essa ação não pode ser desfeita.")) {
-      return;
-    }
+    const confirmar = window.confirm(
+      "Tem certeza que deseja excluir este item? Essa ação não pode ser desfeita."
+    );
+
+    if (!confirmar) return;
 
     try {
       await api.delete(`/itens/${id}`);
@@ -540,7 +569,9 @@ function Detalhe() {
   return (
     <Layout>
       <section className="detail-wrap">
-        <Link className="back-link" to="/">← Voltar para os itens</Link>
+        <Link className="back-link" to="/">
+          ← Voltar para os itens
+        </Link>
 
         {carregando ? (
           <div className="state-card">
@@ -565,7 +596,9 @@ function Detalhe() {
                 <p>Confira as informações do objeto encontrado.</p>
               </div>
 
-              <span className={`status ${item.status === "devolvido" ? "returned" : "waiting"}`}>
+              <span className={`status ${
+                item.status === "devolvido" ? "returned" : "waiting"
+              }`}>
                 {item.status === "devolvido" ? "Devolvido" : "Aguardando"}
               </span>
             </div>
@@ -618,6 +651,7 @@ function Detalhe() {
                 <Link className="button secondary" to={`/editar/${item.id}`}>
                   ✎ Editar
                 </Link>
+
                 <button className="button danger-button" onClick={excluir}>
                   Excluir
                 </button>
@@ -663,7 +697,9 @@ function NaoEncontrada() {
         <div className="state-icon">?</div>
         <h3>Página não encontrada</h3>
         <p>Esse endereço não existe no sistema.</p>
-        <Link className="button primary" to="/">Voltar ao início</Link>
+        <Link className="button primary" to="/">
+          Voltar ao início
+        </Link>
       </div>
     </Layout>
   );
